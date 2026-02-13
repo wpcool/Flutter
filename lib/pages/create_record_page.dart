@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
@@ -553,6 +554,35 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     return true;
   }
 
+  // 压缩图片
+  Future<File> _compressImage(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      img.Image? image = img.decodeImage(bytes);
+      if (image == null) return file;
+      
+      // 如果图片太大，缩小尺寸
+      if (image.width > 1920) {
+        image = img.copyResize(image, width: 1920);
+      }
+      
+      // 压缩质量 75%
+      final compressedBytes = img.encodeJpg(image, quality: 75);
+      
+      // 保存到临时文件
+      final tempDir = await getTemporaryDirectory();
+      final compressedFile = File('${tempDir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await compressedFile.writeAsBytes(compressedBytes);
+      
+      print('图片压缩: ${(bytes.length / 1024).toStringAsFixed(1)}KB -> ${(compressedBytes.length / 1024).toStringAsFixed(1)}KB');
+      
+      return compressedFile;
+    } catch (e) {
+      print('压缩失败: $e');
+      return file;
+    }
+  }
+
   // 保存记录
   Future<void> _saveRecord() async {
     if (!_validateForm()) return;
@@ -562,11 +592,19 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     try {
       final userInfo = _storage.getUserInfo();
       
-      // 先上传照片
+      // 先压缩并上传照片
       final uploadedPhotos = <String>[];
-      for (final photo in _photos) {
+      final totalPhotos = _photos.length;
+      
+      for (int i = 0; i < _photos.length; i++) {
+        _showToast('正在处理照片 ${i + 1}/$totalPhotos...');
+        
         try {
-          final uploadRes = await _apiService.uploadFile('/api/upload', photo);
+          // 压缩图片
+          final compressedPhoto = await _compressImage(_photos[i]);
+          
+          // 上传
+          final uploadRes = await _apiService.uploadFile('/api/upload', compressedPhoto);
           if (uploadRes['url'] != null) {
             uploadedPhotos.add(uploadRes['url']);
           }
