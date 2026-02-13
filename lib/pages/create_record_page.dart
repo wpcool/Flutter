@@ -6,9 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:image/image.dart' as img;
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/watermark_service.dart';
 
 class CreateRecordPage extends StatefulWidget {
   final int? taskId;
@@ -481,27 +481,8 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     }
   }
 
-  // 添加水印
+  // 添加水印 - 使用 Flutter Canvas 支持中文
   Future<File> _addWatermark(File photoFile) async {
-    final bytes = await photoFile.readAsBytes();
-    img.Image? image = img.decodeImage(bytes);
-    if (image == null) return photoFile;
-    
-    final width = image.width;
-    final height = image.height;
-    
-    // 获取当前时间和位置信息
-    final now = DateTime.now();
-    final timeStr = DateFormat('yyyy-MM-dd HH:mm:ss').format(now);
-    final locationStr = (_form['shopAddress'] ?? '').toString();
-    final lat = _form['latitude'] as double?;
-    final lng = _form['longitude'] as double?;
-    
-    // 水印样式参数
-    final padding = 20;
-    final lineHeight = 36;
-    final bgPadding = 12;
-    
     // 构建门店-竞店信息
     String storeInfo = '';
     if (_selectedStoreIndex >= 0 && _selectedStoreIndex < _storeList.length) {
@@ -511,61 +492,17 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
       }
     }
     
-    // 构建水印文字行 - 使用ASCII字符避免字体不支持问题
-    final lines = <String>[];
-    lines.add('[TIME] $timeStr');
+    final now = DateTime.now();
+    final timeStr = DateFormat('yyyy-MM-dd HH:mm:ss').format(now);
     
-    // 添加门店-竞店信息
-    if (storeInfo.isNotEmpty) {
-      lines.add('[STORE] $storeInfo');
-    }
-    
-    // 添加位置行
-    if (locationStr.isNotEmpty && 
-        locationStr != '未知位置' && 
-        !locationStr.toLowerCase().contains('lat:')) {
-      lines.add('[LOC] $locationStr');
-    }
-    
-    // 添加坐标行
-    if (lat != null && lng != null) {
-      lines.add('[GPS] ${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}');
-    }
-    
-    // 计算背景高度
-    final bgHeight = lines.length * lineHeight + bgPadding * 2;
-    final bgY = height - bgHeight - padding;
-    
-    // 绘制半透明黑色背景
-    for (int y = bgY; y < bgY + bgHeight && y < height; y++) {
-      for (int x = padding; x < width - padding && x < width; x++) {
-        final pixel = image.getPixel(x, y);
-        final r = pixel.r;
-        final g = pixel.g;
-        final b = pixel.b;
-        final newR = (r * 0.5).round();
-        final newG = (g * 0.5).round();
-        final newB = (b * 0.5).round();
-        image.setPixel(x, y, img.ColorRgba8(newR, newG, newB, 255));
-      }
-    }
-    
-    // 绘制白色文字
-    final white = img.ColorRgba8(255, 255, 255, 255);
-    final font = img.arial24;
-    
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final y = bgY + bgPadding + (i * lineHeight);
-      img.drawString(image, line, font: font, x: padding + bgPadding, y: y, color: white);
-    }
-    
-    // 保存
-    final tempDir = await getTemporaryDirectory();
-    final outputFile = File('${tempDir.path}/wm_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await outputFile.writeAsBytes(img.encodeJpg(image, quality: 90));
-    
-    return outputFile;
+    return await WatermarkService.addWatermark(
+      imageFile: photoFile,
+      timeStr: timeStr,
+      storeInfo: storeInfo.isNotEmpty ? storeInfo : null,
+      locationStr: _form['shopAddress']?.toString(),
+      lat: _form['latitude'] as double?,
+      lng: _form['longitude'] as double?,
+    );
   }
 
   // 预览照片 - 全屏查看
