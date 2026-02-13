@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 
@@ -16,7 +17,15 @@ class _RecordsPageState extends State<RecordsPage> {
   final _apiService = ApiService();
   final _storage = StorageService();
   List<dynamic> _records = [];
+  List<dynamic> _allRecords = []; // 所有记录，用于筛选
   bool _isLoading = true;
+  
+  // 日期筛选
+  DateTime _selectedDate = DateTime.now();
+  bool _isFiltered = false;
+  
+  // 7天统计
+  List<Map<String, dynamic>> _weeklyStats = [];
 
   @override
   void initState() {
@@ -33,18 +42,27 @@ class _RecordsPageState extends State<RecordsPage> {
         return;
       }
       
+      // 获取最近30天的记录，用于统计和显示
+      final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+      final dateStr = DateFormat('yyyy-MM-dd').format(thirtyDaysAgo);
+      
       print('正在加载用户 ${userInfo.id} 的记录...');
-      final response = await _apiService.get('/api/records?surveyor_id=${userInfo.id}');
-      print('API响应: $response');
+      final response = await _apiService.get('/api/records?surveyor_id=${userInfo.id}&date=$dateStr');
       
       if (response is List) {
-        setState(() => _records = response);
+        setState(() {
+          _allRecords = response;
+          _records = response;
+        });
+        _calculateWeeklyStats();
         print('加载了 ${response.length} 条记录');
       } else if (response is Map && response['data'] is List) {
-        setState(() => _records = response['data']);
+        setState(() {
+          _allRecords = response['data'];
+          _records = response['data'];
+        });
+        _calculateWeeklyStats();
         print('加载了 ${response['data'].length} 条记录');
-      } else {
-        print('未知的响应格式: ${response.runtimeType}');
       }
     } catch (e) {
       print('加载记录失败: $e');
@@ -53,30 +71,292 @@ class _RecordsPageState extends State<RecordsPage> {
     }
   }
 
+  // 计算最近7天的统计
+  void _calculateWeeklyStats() {
+    final stats = <Map<String, dynamic>>[];
+    final now = DateTime.now();
+    
+    for (int i = 6; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i));
+      final dateStr = DateFormat('yyyy-MM-dd').format(date);
+      
+      // 统计这一天的记录数
+      final count = _allRecords.where((r) {
+        final createdAt = r['created_at']?.toString() ?? '';
+        return createdAt.startsWith(dateStr);
+      }).length;
+      
+      stats.add({
+        'date': date,
+        'dateStr': DateFormat('MM-dd').format(date),
+        'weekday': DateFormat('E', 'zh_CN').format(date),
+        'count': count,
+        'isToday': i == 0,
+      });
+    }
+    
+    setState(() => _weeklyStats = stats);
+  }
+
+  // 按日期筛选
+  void _filterByDate(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+      _isFiltered = true;
+      
+      final dateStr = DateFormat('yyyy-MM-dd').format(date);
+      _records = _allRecords.where((r) {
+        final createdAt = r['created_at']?.toString() ?? '';
+        return createdAt.startsWith(dateStr);
+      }).toList();
+    });
+  }
+
+  // 清除筛选
+  void _clearFilter() {
+    setState(() {
+      _isFiltered = false;
+      _selectedDate = DateTime.now();
+      _records = _allRecords;
+    });
+  }
+
+  // 选择日期
+  Future<void> _selectDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2024, 1, 1),
+      lastDate: DateTime.now(),
+      locale: const Locale('zh', 'CN'),
+    );
+    
+    if (picked != null) {
+      _filterByDate(picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
         title: const Text('调研记录'),
         backgroundColor: const Color(0xFF6366F1),
         foregroundColor: Colors.white,
+        actions: [
+          // 日期筛选按钮
+          TextButton.icon(
+            onPressed: _selectDate,
+            icon: const Icon(Icons.calendar_today, color: Colors.white),
+            label: Text(
+              _isFiltered ? DateFormat('MM-dd').format(_selectedDate) : '筛选',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+          if (_isFiltered)
+            IconButton(
+              onPressed: _clearFilter,
+              icon: const Icon(Icons.clear, color: Colors.white),
+              tooltip: '清除筛选',
+            ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadRecords,
               color: const Color(0xFF6366F1),
-              child: _records.isEmpty
-                  ? const Center(child: Text('暂无记录'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _records.length,
-                      itemBuilder: (context, index) {
-                        final record = _records[index];
-                        return _buildRecordCard(record);
-                      },
-                    ),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  children: [
+                    // 7天统计卡片
+                    _buildWeeklyStatsCard(),
+                    // 记录列表
+                    _buildRecordsList(),
+                  ],
+                ),
+              ),
             ),
+    );
+  }
+
+  // 7天统计卡片
+  Widget _buildWeeklyStatsCard() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '近7天调研统计',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 80,
+            child: Row(
+              children: _weeklyStats.map((day) {
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => _filterByDate(day['date']),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _isFiltered && 
+                                DateFormat('yyyy-MM-dd').format(_selectedDate) == 
+                                DateFormat('yyyy-MM-dd').format(day['date'])
+                            ? const Color(0xFF6366F1)
+                            : day['isToday']
+                                ? const Color(0xFFEEF2FF)
+                                : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: day['isToday'] && !_isFiltered
+                              ? const Color(0xFF6366F1)
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            day['weekday'],
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _isFiltered && 
+                                      DateFormat('yyyy-MM-dd').format(_selectedDate) == 
+                                      DateFormat('yyyy-MM-dd').format(day['date'])
+                                  ? Colors.white70
+                                  : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            day['dateStr'],
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: _isFiltered && 
+                                      DateFormat('yyyy-MM-dd').format(_selectedDate) == 
+                                      DateFormat('yyyy-MM-dd').format(day['date'])
+                                  ? Colors.white
+                                  : const Color(0xFF1E293B),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: day['count'] > 0
+                                  ? (_isFiltered && 
+                                          DateFormat('yyyy-MM-dd').format(_selectedDate) == 
+                                          DateFormat('yyyy-MM-dd').format(day['date'])
+                                      ? Colors.white.withOpacity(0.3)
+                                      : const Color(0xFF6366F1).withOpacity(0.1))
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${day['count']}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: _isFiltered && 
+                                        DateFormat('yyyy-MM-dd').format(_selectedDate) == 
+                                        DateFormat('yyyy-MM-dd').format(day['date'])
+                                    ? Colors.white
+                                    : day['count'] > 0
+                                        ? const Color(0xFF6366F1)
+                                        : Colors.grey[400],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 总记录数
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _isFiltered
+                    ? '${DateFormat('yyyy年MM月dd日').format(_selectedDate)} 共 ${_records.length} 条记录'
+                    : '共 ${_records.length} 条记录',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (_isFiltered)
+                TextButton(
+                  onPressed: _clearFilter,
+                  child: const Text('查看全部'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordsList() {
+    if (_records.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(50),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.inbox, size: 60, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text(
+              _isFiltered ? '该日期暂无记录' : '暂无记录',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: _records.length,
+      itemBuilder: (context, index) {
+        return _buildRecordCard(_records[index]);
+      },
     );
   }
 
@@ -84,8 +364,8 @@ class _RecordsPageState extends State<RecordsPage> {
     final photos = record['photos'] as List? ?? [];
     
     return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => _showRecordDetail(record),
@@ -97,69 +377,74 @@ class _RecordsPageState extends State<RecordsPage> {
             children: [
               Row(
                 children: [
-                  Expanded(
+                  // 时间
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                     child: Text(
-                      record['product_name'] ?? '未知商品',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                      record['created_at']?.toString().substring(11, 16) ?? '',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
                       ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // 类别标签
+                  if (record['category'] != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        record['category'],
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6366F1),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          record['product_name'] ?? '未知商品',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${record['own_store_name'] ?? ''} → ${record['store_name'] ?? ''}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                   Text(
                     '¥${record['price'] ?? 0}',
                     style: const TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF6366F1),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // 商品类别标签
-              if (record['category'] != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEEF2FF),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    record['category'],
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF6366F1),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 8),
-              Text(
-                '自己门店: ${record['own_store_name'] ?? ''}',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '竞店: ${record['store_name'] ?? ''}',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
-                  const SizedBox(width: 4),
-                  Text(
-                    record['created_at']?.toString().substring(0, 16) ?? '',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -167,14 +452,14 @@ class _RecordsPageState extends State<RecordsPage> {
               if (photos.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 SizedBox(
-                  height: 80,
+                  height: 60,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: photos.length,
                     itemBuilder: (context, index) {
                       return Container(
-                        width: 80,
-                        height: 80,
+                        width: 60,
+                        height: 60,
                         margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
