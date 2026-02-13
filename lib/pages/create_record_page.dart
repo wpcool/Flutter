@@ -610,7 +610,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('保存成功'),
-          content: Text('调研记录已保存\n记录ID: ${response['id'] ?? '未知'}'),
+          content: Text('调研记录已保存\n记录ID: ${response['record_id'] ?? response['id'] ?? '未知'}'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),

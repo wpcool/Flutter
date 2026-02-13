@@ -43,10 +43,8 @@ class _LoginPageState extends State<LoginPage> {
         // 保存 token
         await _storage.setToken(response['token']);
         
-        // 保存用户信息
-        if (response['user'] != null) {
-          await _storage.setUserInfo(User.fromJson(response['user']));
-        }
+        // 保存用户信息 - 后端直接返回用户信息
+        await _storage.setUserInfo(User.fromJson(response));
 
         if (mounted) {
           Navigator.pushReplacement(
