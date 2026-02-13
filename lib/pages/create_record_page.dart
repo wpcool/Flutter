@@ -511,25 +511,25 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
       }
     }
     
-    // 构建水印文字行
+    // 构建水印文字行 - 使用ASCII字符避免字体不支持问题
     final lines = <String>[];
-    lines.add('📅 $timeStr');
+    lines.add('[TIME] $timeStr');
     
     // 添加门店-竞店信息
     if (storeInfo.isNotEmpty) {
-      lines.add('🏪 $storeInfo');
+      lines.add('[STORE] $storeInfo');
     }
     
     // 添加位置行
     if (locationStr.isNotEmpty && 
         locationStr != '未知位置' && 
         !locationStr.toLowerCase().contains('lat:')) {
-      lines.add('📍 $locationStr');
+      lines.add('[LOC] $locationStr');
     }
     
     // 添加坐标行
     if (lat != null && lng != null) {
-      lines.add('🌐 Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}');
+      lines.add('[GPS] ${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}');
     }
     
     // 计算背景高度
