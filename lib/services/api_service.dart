@@ -37,6 +37,7 @@ class ApiService {
   Future<dynamic> post(String url, {Map<String, dynamic>? data}) async {
     final fullUrl = '$_baseUrl$url';
     print('[API POST] $fullUrl');
+    print('[API DATA] $data');
     
     try {
       final response = await http.post(
@@ -44,6 +45,7 @@ class ApiService {
         headers: _headers(),
         body: data != null ? jsonEncode(data) : null,
       );
+      print('[API RESPONSE BODY] ${response.body}');
       return _handleResponse(response);
     } catch (e) {
       print('[API ERROR] POST $url: $e');

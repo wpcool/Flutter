@@ -595,7 +595,13 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         'photos': uploadedPhotos,
       };
       
-      await _apiService.post('/api/records', data: submitData);
+      final response = await _apiService.post('/api/records', data: submitData);
+      print('提交记录响应: $response');
+      
+      if (response == null || (response is Map && response['error'] != null)) {
+        final errorMsg = response is Map ? response['error'] : '保存失败';
+        throw Exception(errorMsg);
+      }
       
       setState(() => _isLoading = false);
       
@@ -604,7 +610,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('保存成功'),
-          content: const Text('调研记录已保存'),
+          content: Text('调研记录已保存\n记录ID: ${response['id'] ?? '未知'}'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
