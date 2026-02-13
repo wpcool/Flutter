@@ -82,7 +82,7 @@ class _RecordsPageState extends State<RecordsPage> {
               children: [
                 Expanded(
                   child: Text(
-                    record['item_name'] ?? '未知商品',
+                    record['product_name'] ?? '未知商品',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -100,23 +100,39 @@ class _RecordsPageState extends State<RecordsPage> {
               ],
             ),
             const SizedBox(height: 8),
+            // 商品类别标签
+            if (record['category'] != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  record['category'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF6366F1),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
             Text(
-              '店铺: ${record['store_name'] ?? ''}',
+              '自己门店: ${record['own_store_name'] ?? ''}',
               style: TextStyle(
                 color: Colors.grey[600],
                 fontSize: 14,
               ),
             ),
-            if (record['own_store_name'] != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '自己门店: ${record['own_store_name']}',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
-                ),
+            const SizedBox(height: 4),
+            Text(
+              '竞店: ${record['store_name'] ?? ''}',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
               ),
-            ],
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
