@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
@@ -40,7 +41,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
   int _selectedCompetitorIndex = -1;
   Map<String, List<String>> _storeCompetitorMap = {};
   
-  // Form data - 完全对应小程序
+  // Form data
   final Map<String, dynamic> _form = {
     'itemId': null,
     'name': '',
@@ -284,7 +285,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     setState(() => _form[field] = value);
   }
 
-  // 获取位置
+  // 获取位置 - 使用反向地理编码获取汉字地址
   Future<void> _getLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -319,68 +320,168 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         _form['longitude'] = position.longitude;
       });
 
-      setState(() {
-        _form['shopAddress'] = '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-      });
-      _addressController.text = _form['shopAddress'] ?? '';
-      _showToast('位置已获取');
+      // 反向地理编码获取汉字地址
+      try {
+        List<Placemark> placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        
+        if (placemarks.isNotEmpty) {
+          final place = placemarks.first;
+          // 组合地址：街道 + 子地区 + 城市
+          final addressParts = <String>[];
+          if (place.street != null && place.street!.isNotEmpty) {
+            addressParts.add(place.street!);
+          }
+          if (place.subLocality != null && place.subLocality!.isNotEmpty) {
+            addressParts.add(place.subLocality!);
+          }
+          if (place.locality != null && place.locality!.isNotEmpty) {
+            addressParts.add(place.locality!);
+          }
+          
+          final address = addressParts.join(' ');
+          setState(() {
+            _form['shopAddress'] = address.isNotEmpty ? address : '${place.name}';
+          });
+          _addressController.text = _form['shopAddress'] ?? '';
+          _showToast('定位成功: $address');
+        } else {
+          setState(() {
+            _form['shopAddress'] = '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+          });
+          _addressController.text = _form['shopAddress'] ?? '';
+        }
+      } catch (e) {
+        print('反向地理编码失败: $e');
+        setState(() {
+          _form['shopAddress'] = '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+        });
+        _addressController.text = _form['shopAddress'] ?? '';
+        _showToast('位置已获取');
+      }
     } catch (e) {
       _showToast('获取位置失败: $e');
     }
   }
 
-  // 拍照
-  Future<void> _takePhoto() async {
-    // 检查是否已选择位置
-    if (_form['latitude'] == null || _form['longitude'] == null) {
-      final shouldGetLocation = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('提示'),
-          content: const Text('请先选择店铺位置后再拍照'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('暂不拍照'),
+  // 显示照片来源选择
+  void _showPhotoSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            const Text(
+              '选择照片来源',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('去选择位置'),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.camera_alt, color: Color(0xFF6366F1)),
+              ),
+              title: const Text('拍照'),
+              subtitle: const Text('添加水印信息'),
+              onTap: () {
+                Navigator.pop(context);
+                _takePhoto(ImageSource.camera);
+              },
             ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.photo_library, color: Colors.green),
+              ),
+              title: const Text('从相册选择'),
+              subtitle: const Text('不添加水印'),
+              onTap: () {
+                Navigator.pop(context);
+                _takePhoto(ImageSource.gallery);
+              },
+            ),
+            const SizedBox(height: 16),
           ],
         ),
-      );
-      
-      if (shouldGetLocation == true) {
-        await _getLocation();
+      ),
+    );
+  }
+
+  // 拍照或从相册选择
+  Future<void> _takePhoto(ImageSource source) async {
+    // 检查是否已选择位置（只有拍照时才需要）
+    if (source == ImageSource.camera) {
+      if (_form['latitude'] == null || _form['longitude'] == null) {
+        final shouldGetLocation = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('提示'),
+            content: const Text('请先选择店铺位置后再拍照'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('暂不拍照'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('去选择位置'),
+              ),
+            ],
+          ),
+        );
+        
+        if (shouldGetLocation == true) {
+          await _getLocation();
+        }
+        return;
       }
-      return;
     }
 
     try {
       final XFile? photo = await _picker.pickImage(
-        source: ImageSource.camera,
+        source: source,
         imageQuality: 90,
       );
       
       if (photo == null) return;
       
-      _showToast('处理中...');
-      
-      try {
-        final watermarked = await _addWatermark(File(photo.path));
-        setState(() => _photos.add(watermarked));
-      } catch (err) {
-        print('添加水印失败: $err');
+      // 只有拍照才添加水印
+      if (source == ImageSource.camera) {
+        _showToast('处理中...');
+        try {
+          final watermarked = await _addWatermark(File(photo.path));
+          setState(() => _photos.add(watermarked));
+        } catch (err) {
+          print('添加水印失败: $err');
+          setState(() => _photos.add(File(photo.path)));
+          _showToast('水印添加失败，使用原图');
+        }
+      } else {
+        // 相册选择不添加水印
         setState(() => _photos.add(File(photo.path)));
-        _showToast('水印添加失败，使用原图');
       }
     } catch (e) {
-      _showToast('拍照失败: $e');
+      _showToast('选择照片失败: $e');
     }
   }
 
-  // 添加水印 - 按照小程序逻辑：半透明黑色背景，白色文字
+  // 添加水印
   Future<File> _addWatermark(File photoFile) async {
     final bytes = await photoFile.readAsBytes();
     img.Image? image = img.decodeImage(bytes);
@@ -396,7 +497,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     final lat = _form['latitude'] as double?;
     final lng = _form['longitude'] as double?;
     
-    // 水印样式参数 - 和小程序一致
+    // 水印样式参数
     final padding = 20;
     final lineHeight = 36;
     final bgPadding = 12;
@@ -421,14 +522,13 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     final bgHeight = lines.length * lineHeight + bgPadding * 2;
     final bgY = height - bgHeight - padding;
     
-    // 绘制半透明黑色背景 - 小程序是 rgba(0,0,0,0.5)
+    // 绘制半透明黑色背景
     for (int y = bgY; y < bgY + bgHeight && y < height; y++) {
       for (int x = padding; x < width - padding && x < width; x++) {
         final pixel = image.getPixel(x, y);
         final r = pixel.r;
         final g = pixel.g;
         final b = pixel.b;
-        // 混合黑色，透明度0.5
         final newR = (r * 0.5).round();
         final newG = (g * 0.5).round();
         final newB = (b * 0.5).round();
@@ -436,7 +536,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
       }
     }
     
-    // 绘制白色文字 - 使用 arial24 字体
+    // 绘制白色文字
     final white = img.ColorRgba8(255, 255, 255, 255);
     final font = img.arial24;
     
@@ -631,7 +731,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         title: const Text('创建调研记录'),
-        backgroundColor: const Color(0xFF8B5CF6),
+        backgroundColor: const Color(0xFF6366F1),
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -639,28 +739,13 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 选择任务提示
             if (_taskId == null) _buildTaskBanner(),
-            
-            // 当前任务
             if (_taskId != null) _buildCurrentTask(),
-            
-            // 店铺信息
             _buildStoreSection(),
-            
-            // 选择商品
-            if (_taskItems.isNotEmpty) _buildItemSelector(),
-            
-            // 商品信息
+            if (_taskItems.isNotEmpty) _buildGroupedItemSelector(),
             _buildProductSection(),
-            
-            // 价格信息
             _buildPriceSection(),
-            
-            // 备注
             _buildRemarkSection(),
-            
-            // 保存按钮
             _buildSubmitButton(),
           ],
         ),
@@ -668,6 +753,140 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     );
   }
 
+  // 按品类分组的商品选择器
+  Widget _buildGroupedItemSelector() {
+    // 按品类分组
+    final Map<String, List<dynamic>> groupedItems = {};
+    for (final item in _taskItems) {
+      final category = item['category'] ?? '其他';
+      if (!groupedItems.containsKey(category)) {
+        groupedItems[category] = [];
+      }
+      groupedItems[category]!.add(item);
+    }
+
+    return _buildCard(
+      title: '🛒 选择商品${_totalRecordCount > 0 ? " (已调研 $_totalRecordCount 次)" : ""}',
+      children: [
+        const SizedBox(height: 8),
+        ...groupedItems.entries.map((entry) {
+          return _buildCategoryGroup(entry.key, entry.value);
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildCategoryGroup(String category, List<dynamic> items) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 品类标题
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Text(
+              category,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6366F1),
+              ),
+            ),
+          ),
+          // 商品列表
+          ...items.map((item) => _buildItemRow(item)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemRow(dynamic item) {
+    final isSelected = _selectedItem != null && _selectedItem['id'] == item['id'];
+    final recordCount = item['record_count'] ?? 0;
+    
+    return InkWell(
+      onTap: () => _onSelectItem(item),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFEEF2FF) : null,
+          border: Border(
+            bottom: BorderSide(
+              color: const Color(0xFFE2E8F0).withOpacity(0.5),
+              width: 1,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // 数量徽章
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: recordCount > 0 ? const Color(0xFF10B981) : const Color(0xFFE2E8F0),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '$recordCount',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: recordCount > 0 ? Colors.white : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // 商品名和规格
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['product_name'] ?? '',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: isSelected ? const Color(0xFF6366F1) : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  if (item['product_spec'] != null && item['product_spec'].toString().isNotEmpty)
+                    Text(
+                      item['product_spec'],
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // 选中标记
+            if (isSelected)
+              const Icon(Icons.check_circle, color: Color(0xFF6366F1), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 原有方法保持不变...
   Widget _buildTaskBanner() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -697,9 +916,9 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF8B5CF6).withAlpha(20),
+        color: const Color(0xFF6366F1).withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF8B5CF6).withAlpha(50)),
+        border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
       ),
       child: Row(
         children: [
@@ -723,7 +942,6 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     return _buildCard(
       title: '🏪 店铺信息',
       children: [
-        // 门店选择
         _buildLabel('选择门店', required: true),
         const SizedBox(height: 8),
         Container(
@@ -748,8 +966,6 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
             onChanged: (val) => _onStoreChange(val),
           ),
         ),
-        
-        // 竞店选择
         if (_selectedStoreIndex >= 0) ...[
           const SizedBox(height: 16),
           _buildLabel('选择竞店', required: true),
@@ -777,8 +993,6 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
             ),
           ),
         ],
-        
-        // 店铺地址
         const SizedBox(height: 16),
         _buildLabel('店铺地址'),
         const SizedBox(height: 8),
@@ -810,80 +1024,13 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6),
+                  color: const Color(0xFF6366F1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text('📍', style: TextStyle(fontSize: 20)),
               ),
             ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildItemSelector() {
-    return _buildCard(
-      title: '🛒 选择商品${_totalRecordCount > 0 ? " (已调研 $_totalRecordCount 次)" : ""}',
-      children: [
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _taskItems.map((item) {
-            final isSelected = _selectedItem != null && _selectedItem['id'] == item['id'];
-            final recordCount = item['record_count'] ?? 0;
-            
-            return GestureDetector(
-              onTap: () => _onSelectItem(item),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF8B5CF6) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? const Color(0xFF8B5CF6) : Colors.grey[300]!,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: recordCount > 0 ? Colors.orange : Colors.grey[400],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '$recordCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 10),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      item['category'] ?? '',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isSelected ? Colors.white70 : Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      item['product_name'] ?? '',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        color: isSelected ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                    if (isSelected) ...[
-                      const SizedBox(width: 4),
-                      const Text('✓', style: TextStyle(color: Colors.white)),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
         ),
       ],
     );
@@ -1042,7 +1189,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
             }),
             if (_photos.length < 3)
               GestureDetector(
-                onTap: _takePhoto,
+                onTap: _showPhotoSourceDialog,
                 child: Container(
                   width: 80,
                   height: 80,
@@ -1054,8 +1201,8 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text('📷', style: TextStyle(fontSize: 24)),
-                      Text('拍照', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      const Icon(Icons.add_photo_alternate, size: 28, color: Color(0xFF6366F1)),
+                      Text('添加', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                       Text('${_photos.length}/3', style: TextStyle(fontSize: 10, color: Colors.grey[400])),
                     ],
                   ),
@@ -1064,7 +1211,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
           ],
         ),
         const SizedBox(height: 8),
-        Text('请拍摄商品和价格标签，最多3张', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+        Text('拍照添加水印，相册选择不添加', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
       ],
     );
   }
@@ -1090,7 +1237,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
       child: ElevatedButton(
         onPressed: _isLoading ? null : _saveRecord,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF8B5CF6),
+          backgroundColor: const Color(0xFF6366F1),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1115,7 +1262,7 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(10),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
