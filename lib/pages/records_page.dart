@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 
@@ -30,7 +31,10 @@ class _RecordsPageState extends State<RecordsPage> {
   @override
   void initState() {
     super.initState();
-    _loadRecords();
+    // 初始化中文日期格式
+    initializeDateFormatting('zh_CN', null).then((_) {
+      _loadRecords();
+    });
   }
 
   Future<void> _loadRecords() async {
@@ -43,8 +47,11 @@ class _RecordsPageState extends State<RecordsPage> {
       }
       
       // 获取最近30天的记录，用于统计和显示
-      final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+      final now = DateTime.now();
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
       final dateStr = DateFormat('yyyy-MM-dd').format(thirtyDaysAgo);
+      
+      print('查询记录: 从 $dateStr 到 ${DateFormat('yyyy-MM-dd').format(now)}');
       
       print('正在加载用户 ${userInfo.id} 的记录...');
       final response = await _apiService.get('/api/records?surveyor_id=${userInfo.id}&date=$dateStr');
