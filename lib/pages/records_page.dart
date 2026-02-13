@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 
+// API基础URL，用于拼接图片完整路径
+const String _baseUrl = 'http://8.152.197.205';
+
 class RecordsPage extends StatefulWidget {
   const RecordsPage({super.key});
 
@@ -25,13 +28,23 @@ class _RecordsPageState extends State<RecordsPage> {
     setState(() => _isLoading = true);
     try {
       final userInfo = _storage.getUserInfo();
-      if (userInfo == null) return;
+      if (userInfo == null) {
+        print('未登录，无法加载记录');
+        return;
+      }
       
+      print('正在加载用户 ${userInfo.id} 的记录...');
       final response = await _apiService.get('/api/records?surveyor_id=${userInfo.id}');
+      print('API响应: $response');
+      
       if (response is List) {
         setState(() => _records = response);
-      } else if (response['data'] is List) {
+        print('加载了 ${response.length} 条记录');
+      } else if (response is Map && response['data'] is List) {
         setState(() => _records = response['data']);
+        print('加载了 ${response['data'].length} 条记录');
+      } else {
+        print('未知的响应格式: ${response.runtimeType}');
       }
     } catch (e) {
       print('加载记录失败: $e');
@@ -162,7 +175,11 @@ class _RecordsPageState extends State<RecordsPage> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(8),
                         image: DecorationImage(
-                          image: NetworkImage(photos[index]),
+                          image: NetworkImage(
+                            photos[index].startsWith('http') 
+                              ? photos[index] 
+                              : '$_baseUrl${photos[index]}',
+                          ),
                           fit: BoxFit.cover,
                         ),
                       ),
