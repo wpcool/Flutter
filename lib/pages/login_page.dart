@@ -32,7 +32,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final response = await _apiService.post(
-        '/api/auth/login',
+        '/api/login',
         data: {
           'username': username,
           'password': password,
