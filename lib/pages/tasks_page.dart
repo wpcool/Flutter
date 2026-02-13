@@ -41,6 +41,12 @@ class _TasksPageState extends State<TasksPage> {
       
       if (response is List) {
         setState(() => _tasks = response);
+        
+        // 加载每个任务的完成状态
+        for (final task in _tasks) {
+          await _loadTaskCompletion(task);
+        }
+        
         _calculateStats();
       }
     } catch (e) {
