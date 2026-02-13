@@ -502,9 +502,23 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     final lineHeight = 36;
     final bgPadding = 12;
     
+    // 构建门店-竞店信息
+    String storeInfo = '';
+    if (_selectedStoreIndex >= 0 && _selectedStoreIndex < _storeList.length) {
+      storeInfo = _storeList[_selectedStoreIndex];
+      if (_selectedCompetitorIndex >= 0 && _selectedCompetitorIndex < _competitorList.length) {
+        storeInfo = '$storeInfo -- ${_competitorList[_selectedCompetitorIndex]}';
+      }
+    }
+    
     // 构建水印文字行
     final lines = <String>[];
     lines.add('📅 $timeStr');
+    
+    // 添加门店-竞店信息
+    if (storeInfo.isNotEmpty) {
+      lines.add('🏪 $storeInfo');
+    }
     
     // 添加位置行
     if (locationStr.isNotEmpty && 
