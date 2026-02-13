@@ -54,19 +54,34 @@ class _RecordsPageState extends State<RecordsPage> {
       print('查询记录: 从 $dateStr 到 ${DateFormat('yyyy-MM-dd').format(now)}');
       
       print('正在加载用户 ${userInfo.id} 的记录...');
-      final response = await _apiService.get('/api/records?surveyor_id=${userInfo.id}&date=$dateStr');
+      final response = await _apiService.get('/api/records?surveyor_id=${userInfo.id}');
       
       if (response is List) {
+        // 只保留最近30天的记录
+        final now = DateTime.now();
+        final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+        final filteredRecords = response.where((r) {
+          final createdAt = DateTime.tryParse(r['created_at']?.toString() ?? '');
+          return createdAt != null && createdAt.isAfter(thirtyDaysAgo);
+        }).toList();
+        
         setState(() {
-          _allRecords = response;
-          _records = response;
+          _allRecords = filteredRecords;
+          _records = filteredRecords;
         });
         _calculateWeeklyStats();
-        print('加载了 ${response.length} 条记录');
+        print('加载了 ${filteredRecords.length} 条记录(最近30天)');
       } else if (response is Map && response['data'] is List) {
+        final now = DateTime.now();
+        final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+        final filteredRecords = (response['data'] as List).where((r) {
+          final createdAt = DateTime.tryParse(r['created_at']?.toString() ?? '');
+          return createdAt != null && createdAt.isAfter(thirtyDaysAgo);
+        }).toList();
+        
         setState(() {
-          _allRecords = response['data'];
-          _records = response['data'];
+          _allRecords = filteredRecords;
+          _records = filteredRecords;
         });
         _calculateWeeklyStats();
         print('加载了 ${response['data'].length} 条记录');
