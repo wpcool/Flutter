@@ -554,9 +554,17 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
     return outputFile;
   }
 
-  // 预览照片
+  // 预览照片 - 全屏查看
   void _previewPhoto(int index) {
-    _showToast('照片 ${index + 1}/${_photos.length}');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PhotoPreviewPage(
+          photos: _photos,
+          initialIndex: index,
+        ),
+      ),
+    );
   }
 
   // 删除照片
@@ -1312,6 +1320,133 @@ class _CreateRecordPageState extends State<CreateRecordPage> {
         borderSide: BorderSide(color: Colors.grey[300]!),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+    );
+  }
+}
+
+// 图片预览页面
+class PhotoPreviewPage extends StatefulWidget {
+  final List<File> photos;
+  final int initialIndex;
+
+  const PhotoPreviewPage({
+    super.key,
+    required this.photos,
+    required this.initialIndex,
+  });
+
+  @override
+  State<PhotoPreviewPage> createState() => _PhotoPreviewPageState();
+}
+
+class _PhotoPreviewPageState extends State<PhotoPreviewPage> {
+  late PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // 图片翻页
+            PageView.builder(
+              controller: _pageController,
+              itemCount: widget.photos.length,
+              onPageChanged: (index) {
+                setState(() => _currentIndex = index);
+              },
+              itemBuilder: (context, index) {
+                return InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.file(
+                      widget.photos[index],
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                );
+              },
+            ),
+            // 顶部栏
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.7),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${_currentIndex + 1} / ${widget.photos.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    const SizedBox(width: 48), // 平衡布局
+                  ],
+                ),
+              ),
+            ),
+            // 底部指示器（多张图片时显示）
+            if (widget.photos.length > 1)
+              Positioned(
+                bottom: 20,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: widget.photos.asMap().entries.map((entry) {
+                    return Container(
+                      width: 8,
+                      height: 8,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _currentIndex == entry.key
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.4),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
