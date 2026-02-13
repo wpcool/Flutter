@@ -31,30 +31,30 @@ class WatermarkService {
     // 绘制原图
     canvas.drawImage(originalImage, Offset.zero, Paint());
     
-    // 构建水印文字
+    // 构建水印文字 - 使用emoji图标
     final lines = <String>[];
-    lines.add('时间: $timeStr');
+    lines.add('🕐 $timeStr');
     
     if (storeInfo != null && storeInfo.isNotEmpty) {
-      lines.add('门店: $storeInfo');
+      lines.add('🏪 $storeInfo');
     }
     
     if (locationStr != null && 
         locationStr.isNotEmpty && 
         locationStr != '未知位置' &&
         !locationStr.toLowerCase().contains('lat:')) {
-      lines.add('地址: $locationStr');
+      lines.add('📍 $locationStr');
     }
     
     if (lat != null && lng != null) {
-      lines.add('坐标: ${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}');
+      lines.add('🌐 ${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}');
     }
     
-    // 水印样式
+    // 水印样式 - 增大字体
     const padding = 20.0;
-    const lineHeight = 40.0;
-    const bgPadding = 12.0;
-    const fontSize = 24.0;
+    const lineHeight = 56.0;
+    const bgPadding = 16.0;
+    const fontSize = 36.0;
     
     final bgHeight = lines.length * lineHeight + bgPadding * 2;
     final bgY = height - bgHeight - padding;
